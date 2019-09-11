@@ -1,0 +1,7 @@
+# 9/11/19
+- Started copying coitrees code
+- Need to learn about radix sort in more detail
+- Look up rax tree / Andrew Gallant state maching thing
+- Migrate all comparisons to not be just start based (would this help?)
+- clean up clones of things
+- clean up for loops

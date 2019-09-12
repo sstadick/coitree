@@ -92,7 +92,7 @@ struct TraversalInfo {
 }
 
 #[derive(Debug)]
-struct COITree<T: Eq + Clone + std::fmt::Debug> {
+pub struct COITree<T: Eq + Clone + std::fmt::Debug> {
     nodes: Vec<IntervalNode<T>>,
 }
 
@@ -277,6 +277,7 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         max_depth: usize,
     ) {
         let n = (start..end).len();
+        //let n = end - start; // TODO
 
         // small subtrees are just put in sorted order
         if childless && info[idxs[start]].subtree_size <= SIMPLE_SUBTREE_CUTOFF {

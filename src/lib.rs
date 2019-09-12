@@ -2,19 +2,19 @@ use std::cmp::max;
 use std::cmp::Ordering::{self};
 // small subtrees at the bottom of the tree are stored in sorted order. This gives the upper bound
 // on hte size of such subtrees.
-const SIMPLE_SUBTREE_CUTOFF: usize = 32;
+const SIMPLE_SUBTREE_CUTOFF: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct IntervalNode<T: Eq + Clone + std::fmt::Debug> {
     // subtree interval
-    subtree_last: i32,
+    subtree_stop: i32,
     // interval
     pub start: i32,
     pub stop: i32,
     // When this is the root of a simple subtree, left == right is the size of the subtree,
     // otherwise they are left, right child pointers
-    left: u32,
-    right: u32,
+    left: Option<usize>,
+    right: Option<usize>,
 
     pub val: T,
 }
@@ -36,16 +36,16 @@ impl<T: Eq + Clone + std::fmt::Debug> IntervalNode<T> {
     /// Check if a range overlaps the subtree of a node
     #[inline]
     pub fn overlap_subtree(&self, start: i32, stop: i32) -> bool {
-        self.start < stop && self.subtree_last > start
+        self.start < stop && self.subtree_stop > start
     }
 
     pub fn new(start: i32, stop: i32, val: T) -> Self {
         IntervalNode {
-            subtree_last: 0,
+            subtree_stop: 0,
             start,
             stop,
-            left: 0,
-            right: 0,
+            left: None,
+            right: None,
             val,
         }
     }
@@ -86,8 +86,8 @@ struct TraversalInfo {
     depth: usize,
     dfs: usize,
     subtree_size: usize,
-    left: usize,
-    right: usize,
+    left: Option<usize>,
+    right: Option<usize>,
     simple: bool, // set by veb_order_recursion
 }
 
@@ -152,7 +152,8 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         let node = &self.nodes[root_idx];
         if node.left == node.right {
             // simple subtree
-            for k in root_idx..root_idx + node.right as usize {
+            // TODO: this bit doesn't make a lot of sense... what if both are None?
+            for k in root_idx..root_idx + node.right.unwrap() {
                 let node = &self.nodes[k];
                 if node.overlap(start, stop) {
                     results.push(node);
@@ -162,15 +163,15 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             if node.overlap(start, stop) {
                 results.push(node);
             }
-            let left = node.left as usize;
-            if left < u32::max_value() as usize {
-                if self.nodes[left].subtree_last >= start {
+            let left = node.left;
+            if let Some(left) = left {
+                if self.nodes[left].subtree_stop >= start {
                     self.query_recursion(left, start, stop, &mut results);
                 }
             }
 
-            let right = node.right as usize;
-            if right < u32::max_value() as usize {
+            let right = node.right;
+            if let Some(right) = right {
                 if node.overlap_subtree(start, stop) {
                     // check if it is down this subtree at all
                     self.query_recursion(right, start, stop, &mut results)
@@ -188,16 +189,11 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
 
     fn veb_order(mut nodes: Vec<IntervalNode<T>>) -> Vec<IntervalNode<T>> {
         let mut veb_nodes = nodes.clone();
-        let mut nodes_presorted = true;
         for i in 1..nodes.len() {
             if nodes[i] < nodes[i - 1] {
-                nodes_presorted = false;
+                Self::radix_sort_nodes(&mut nodes, &mut veb_nodes);
                 break;
             }
-        }
-
-        if !nodes_presorted {
-            Self::radix_sort_nodes(&mut nodes, &mut veb_nodes);
         }
 
         let mut info = Self::traverse(&mut nodes);
@@ -211,6 +207,7 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             tmp[info[*i].dfs] = *i;
         }
         let (idxs, tmp) = (tmp, idxs);
+        println!("{:#?}", idxs);
 
         Self::veb_order_recursion(
             idxs,
@@ -234,19 +231,19 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             veb_nodes[i] = nodes[idxs[i]].clone();
 
             if info[idxs[i]].simple {
-                veb_nodes[i].left = info[idxs[i]].subtree_size as u32;
+                veb_nodes[i].left = Some(info[idxs[i]].subtree_size);
                 veb_nodes[i].right = veb_nodes[i].left;
             } else {
                 // update left and right pointers
-                let left = info[idxs[i]].left as u32;
-                veb_nodes[i].left = if left < u32::max_value() {
-                    revidx[left as usize] as u32
+                let left = info[idxs[i]].left;
+                veb_nodes[i].left = if let Some(left_) = left {
+                    Some(revidx[left_])
                 } else {
                     left
                 };
-                let right = info[idxs[i]].right as u32;
-                veb_nodes[i].right = if right < u32::max_value() {
-                    revidx[right as usize] as u32
+                let right = info[idxs[i]].right;
+                veb_nodes[i].right = if let Some(right_) = right {
+                    Some(revidx[right_])
                 } else {
                     right
                 };
@@ -258,12 +255,12 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
     }
 
     // Recursively reorder indexes to put it in vEB order. Called by `veb_order`
-    // idxs: current permutation
+    // idxs: current permutation, arranged in dfs order
     // tmp: temporary space of equal length to idxs
     // nodes: the interval nodes (in sorted order)
     // start, end: slice within idxs to be reordered
     // childless: true if this slice is a proper subtree and has no children below it
-    // parit: true if idxs and tmp are swapped and need to be copied back,
+    // parity: true if idxs and tmp are swapped and need to be copied back,
     // min_depth, max_depth: depth extreme of the start..end slice
     fn veb_order_recursion(
         idxs: &mut [usize],
@@ -276,8 +273,7 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         min_depth: usize,
         max_depth: usize,
     ) {
-        let n = (start..end).len();
-        //let n = end - start; // TODO
+        let n = end - start;
 
         // small subtrees are just put in sorted order
         if childless && info[idxs[start]].subtree_size <= SIMPLE_SUBTREE_CUTOFF {
@@ -380,14 +376,14 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         let mut subtree_size = 1;
 
         if nodes[root_idx].left == nodes[root_idx].right {
-            subtree_size = nodes[root_idx].right as usize;
+            subtree_size = nodes[root_idx].right.unwrap_or(0);
         } else {
-            let left = nodes[root_idx].left as usize;
-            if left < u32::max_value() as usize {
+            let left = nodes[root_idx].left;
+            if let Some(left) = left {
                 subtree_size += Self::compute_tree_size(nodes, left);
             }
-            let right = nodes[root_idx].right as usize;
-            if right < u32::max_value() as usize {
+            let right = nodes[root_idx].right;
+            if let Some(right) = right {
                 subtree_size += Self::compute_tree_size(nodes, right);
             }
         }
@@ -447,8 +443,8 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             to = swap_tmp;
         }
     }
-    // dfs traversal of an implicit bst computing dfs number, node depth, subtree size, and left and
-    // right pointers.
+    // depth first traversal of an implicit binary search tree computing dfs number, node depth,
+    // subtree size, and left and right pointers.
     fn traverse(nodes: &mut [IntervalNode<T>]) -> Vec<TraversalInfo> {
         let n = nodes.len();
         let mut info = vec![
@@ -456,8 +452,8 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
                 depth: 0,
                 dfs: 0,
                 subtree_size: 0,
-                left: 0,
-                right: 0,
+                left: None,
+                right: None,
                 simple: false
             };
             n
@@ -475,42 +471,53 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         end: usize,
         depth: usize,
         dfs: &mut usize,
-    ) -> (usize, usize) {
+    ) -> (Option<usize>, usize) {
         if start >= end {
-            return (usize::max_value(), 0);
+            return (None, 0);
         }
 
         let root_idx = start + (end - start) / 2;
         info[root_idx].depth = depth;
         info[root_idx].dfs = *dfs;
-        nodes[root_idx].subtree_last = nodes[root_idx].stop;
+        nodes[root_idx].subtree_stop = nodes[root_idx].stop;
         *dfs += 1;
-        let mut left = usize::max_value();
-        let mut right = usize::max_value();
+        //let mut left = usize::max_value();
+        let mut left = None;
+        let mut right = None;
+        //let mut right = usize::max_value();
         let mut subtree_size = 1;
 
         if root_idx > start {
             let (left_, left_subtree_size) =
                 Self::traverse_recursion(nodes, info, start, root_idx, depth + 1, dfs);
+            if let Some(left_val) = left_ {
+                nodes[root_idx].subtree_stop =
+                    max(nodes[root_idx].subtree_stop, nodes[left_val].subtree_stop);
+            } else {
+                nodes[root_idx].subtree_stop = nodes[root_idx].subtree_stop;
+            }
             left = left_;
             subtree_size += left_subtree_size;
-            nodes[root_idx].subtree_last =
-                max(nodes[root_idx].subtree_last, nodes[left].subtree_last);
         }
 
         if root_idx + 1 < end {
             let (right_, right_subtree_size) =
                 Self::traverse_recursion(nodes, info, root_idx + 1, end, depth + 1, dfs);
+
+            if let Some(right_val) = right_ {
+                nodes[root_idx].subtree_stop =
+                    max(nodes[root_idx].subtree_stop, nodes[right_val].subtree_stop);
+            } else {
+                nodes[root_idx].subtree_stop = nodes[root_idx].subtree_stop;
+            }
             right = right_;
             subtree_size += right_subtree_size;
-            nodes[root_idx].subtree_last =
-                max(nodes[root_idx].subtree_last, nodes[right].subtree_last);
         }
 
         info[root_idx].subtree_size = subtree_size;
         info[root_idx].left = left;
         info[root_idx].right = right;
-        (root_idx, subtree_size)
+        (Some(root_idx), subtree_size)
     }
 }
 

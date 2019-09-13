@@ -203,7 +203,6 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         let node = &self.nodes[root_idx];
         if node.left == node.right {
             // simple subtree
-            // TODO: this bit doesn't make a lot of sense... what if both are None?
             for k in root_idx..root_idx + node.right.unwrap() {
                 let node = &self.nodes[k];
                 if node.overlap(start, stop) {
@@ -425,7 +424,6 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
     }
 
     // Traverse the tree and return the size, used for a sanity check
-    // TODO: move from u32::max_size() to Option<u32>
     fn compute_tree_size(nodes: &[IntervalNode<T>], root_idx: usize) -> usize {
         let mut subtree_size = 1;
 
@@ -447,9 +445,6 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
     // Simple two pass radix sort of 32bit integers (16 bits at a time) to sort nodes on start
     // position. tmp is temporary space for the first pass of equal length to nodes.
     fn radix_sort_nodes(nodes: &mut [IntervalNode<T>], tmp: &mut [IntervalNode<T>]) {
-        //let max_fist = nodes
-        //.iter()
-        //.fold(0, |max_first, node| max(max_first, node.start));
         let mut count = 0;
         let n = nodes.len();
 
@@ -465,9 +460,12 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
 
         while count < 32 / R {
             //let mut radix_counts: [u32; K] = [0; K];
-            for i in 0..K {
-                radix_counts[i] = 0;
+            for val in radix_counts.iter_mut().take(K) {
+                *val = 0;
             }
+            //for i in 0..K {
+            //radix_counts[i] = 0;
+            //}
 
             for i in 0..n {
                 radix_counts[((from[i].start >> shift) & MASK) as usize] += 1;
@@ -492,9 +490,9 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             count += 1;
             shift += 1;
 
-            let swap_tmp = from;
-            from = to;
-            to = swap_tmp;
+            std::mem::swap(&mut from, &mut to);
+            //from = to;
+            //to = swap_tmp;
         }
     }
     // depth first traversal of an implicit binary search tree computing dfs number, node depth,

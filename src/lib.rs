@@ -102,6 +102,10 @@ pub struct IterFind<'a, T>
 where
     T: Eq + Clone + 'a + std::fmt::Debug,
 {
+    //nodes: Vec<(usize, &'a IntervalNode<T>)>,
+    //inner: &'a COITree<T>,
+    //start: i32,
+    //stop: i32,
     inner: &'a COITree<T>,
     results: Vec<&'a IntervalNode<T>>,
     off: usize,
@@ -120,10 +124,42 @@ impl<'a, T: Eq + Clone + std::fmt::Debug> Iterator for IterFind<'a, T> {
         } else {
             None
         }
+        //println!("{:#?}", self.inner);
+        //loop {
+        //let (root_idx, candidate) = match self.nodes.pop() {
+        //None => return None,
+        //Some((root_idx, node)) => (root_idx, node),
+        //};
+        //// simple subtree
+        //if candidate.left == candidate.right {
+        //for k in root_idx..root_idx + candidate.right.unwrap_or(0) {
+        //let node = &self.inner.nodes[k];
+        //if node.overlap(self.start, self.stop) {
+        //self.nodes.push((k + 1, node));
+        //return Some(node);
+        //}
+        //}
+        //} else {
+        //if let Some(left) = candidate.left {
+        //if self.inner.nodes[left].subtree_stop >= self.start {
+        //self.nodes.push((left, &self.inner.nodes[left]));
+        //}
+        //}
+
+        //if let Some(right) = candidate.right {
+        //if self.inner.nodes[right].overlap_subtree(self.start, self.stop) {
+        //self.nodes.push((right, &self.inner.nodes[right]));
+        //}
+        //}
+
+        //if candidate.overlap(self.start, self.stop) {
+        //return Some(candidate);
+        //}
+        //}
+        //}
     }
 }
 
-// TODO: Move from max_value() to Option
 // TODO: Move from clone to copy
 impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
     pub fn new(nodes: Vec<IntervalNode<T>>) -> COITree<T> {
@@ -133,13 +169,28 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
     }
 
     pub fn find(&self, start: i32, stop: i32) -> IterFind<T> {
+        //let root_idx = 0;
         IterFind {
-            inner: self,
-            results: self.query(start, stop),
-            off: 0,
             start,
             stop,
+            off: 0,
+            inner: self,
+            results: self.query(start, stop),
         }
+        //match self.nodes.get(root_idx) {
+        //Some(node) => IterFind {
+        //nodes: vec![(0, node)],
+        //inner: self,
+        //start,
+        //stop,
+        //},
+        //None => IterFind {
+        //nodes: vec![],
+        //inner: self,
+        //start,
+        //stop,
+        //},
+        //}
     }
 
     fn query_recursion<'a>(
@@ -207,7 +258,6 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             tmp[info[*i].dfs] = *i;
         }
         let (idxs, tmp) = (tmp, idxs);
-        println!("{:#?}", idxs);
 
         Self::veb_order_recursion(
             idxs,
@@ -294,6 +344,8 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
             return;
         }
 
+        // Divide your tree in half, top_size is the index that seperates the top and bottom
+        // subtree
         let pivot_depth = min_depth + (max_depth - min_depth) / 2;
         let top_size = Self::stable_partition_by_depth(idxs, tmp, info, pivot_depth, start, end);
 
@@ -317,11 +369,13 @@ impl<T: Eq + Clone + std::fmt::Debug> COITree<T> {
         let bottom_subtree_depth = pivot_depth + 1;
         let mut i = start + top_size;
         while i < end {
+            // The depth of the next tree down should be 1 more than our pivot
             assert!(info[idxs[i]].depth == bottom_subtree_depth);
             let mut j = i + 1;
             let mut subtree_max_depth = info[idxs[i]].depth;
-            while i < end && info[idxs[j]].depth != bottom_subtree_depth {
-                assert!(info[idxs[j]].depth == bottom_subtree_depth);
+            while j < end && info[idxs[j]].depth != bottom_subtree_depth {
+                // TODO: This seems potentially wrong when there is an even number of nodes
+                assert!(info[idxs[j]].depth > bottom_subtree_depth);
                 if info[idxs[j]].depth > subtree_max_depth {
                     subtree_max_depth = info[idxs[j]].depth;
                 }
